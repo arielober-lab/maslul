@@ -61,6 +61,18 @@ const STOPS = [
   await pg.waitForTimeout(300);
   await pg.screenshot({ path: "map-empty.png" });
 
+  // the footer and the forced refresh live in the settings
+  await pg.click("#settingsBtn");
+  await pg.waitForTimeout(200);
+  await pg.screenshot({ path: "map-settings.png", fullPage: true });
+  const stamp = await pg.evaluate(() => ({
+    footer: document.querySelector("footer").innerText.replace(/\n+/g, " | "),
+    wa: document.getElementById("builder").href,
+    version: document.getElementById("appver").textContent,
+    hasRefresh: !!document.getElementById("refreshBtn")
+  }));
+  console.log(JSON.stringify(stamp, null, 1));
+
   console.log(errs.length ? "PAGE ERRORS: " + errs.join(" ;; ") : "no page errors");
   await b.close(); srv.close();
 })();
