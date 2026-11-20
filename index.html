@@ -408,6 +408,7 @@
           '<p class="name">' + esc(s.name || "ללא שם") + '</p>' +
           '<div class="role">' + (s.kind === "pickup" ? "נקודת איסוף" : "מסירה") +
             (s.located === false ? ' · <span style="color:#9E3418;font-weight:700">לא אותרה במפה</span>' : '') +
+            (s.located && s.approx ? ' · <span style="color:#6E7377">מיקום מקורב</span>' : '') +
           '</div>' +
         '</div></div>' +
         '<div class="edit">' +
@@ -525,22 +526,23 @@
   }
 
   // ---------- auto ordering ----------
-  // Address lines carry things a geocoder chokes on: an apartment after a slash,
-  // a floor, an entrance, and words like "רחבת" before the street name.
+  // An address line carries far more than a geocoder wants: an apartment after a
+  // slash, a floor, an entrance, a landmark after a dash. Rather than deleting all
+  // of that, pull out the only two things that matter — the street and its first
+  // number. (Subtracting with \\b does not work here: in JavaScript that boundary
+  // is defined on ASCII letters, so it never fires after a Hebrew word.)
   function geoQuery(stop, attempt) {
-    var a = (stop.addr || "").split(" · ")[0].split(",")[0];
-    a = a.replace(/\s*\/\s*\d+\S*/, "");
-    a = a.replace(/\s+(קומה|דירה|כניסה|קרקע|דלת)\b.*$/, "");
-    if (attempt > 0) a = a.replace(/^\s*(רחבת|שדרות|שד['׳]?|רחוב|רח['׳]?)\s+/, "");
-    a = a.trim();
+    var raw = (stop.addr || "").split(" · ")[0].split(",")[0].trim();
+    var m = raw.match(/^(.*?[^\d\s])\s*(\d+)/);
+    var street = (m ? m[1] : raw).trim();
+    var num = m ? m[2] : "";
+    if (attempt > 0) street = street.replace(/^\s*(רחבת|שדרות|שד['׳]?|רחוב|רח['׳]?)\s+/, "").trim();
+    var a = attempt > 1 ? street : (street + (num ? " " + num : ""));
+    if (!a) return "";
     var city = state.settings.city.trim();
     if (city && a.indexOf(city) === -1) a += ", " + city;
     return a;
   }
-
-  // null = the service could not be reached at all (no signal, blocked network);
-  // [] = it answered but knows nothing about that address.
-  var netDown = false;
 
   function geocodeOnce(q) {
     var url = "https://nominatim.openstreetmap.org/search?format=json&limit=1&q=" +
@@ -551,25 +553,28 @@
   }
 
   function geocode(stop) {
-    return geocodeOnce(geoQuery(stop, 0)).then(function (j) {
-      if (j === null) return null;
-      if (j && j[0]) return j;
-      var second = geoQuery(stop, 1);
-      if (second === geoQuery(stop, 0)) return [];
-      return new Promise(function (res) { setTimeout(res, 1100); }).then(function () {
-        return geocodeOnce(second);
-      });
-    }).then(function (j) {
-      if (j === null) { stop.located = undefined; return stop; }
-      if (j && j[0]) {
-        stop.lat = parseFloat(j[0].lat);
-        stop.lng = parseFloat(j[0].lon);
-        stop.located = true;
-      } else {
-        stop.located = false;
-      }
-      return stop;
-    });
+    var tried = [];
+    function attempt(n) {
+      if (n > 2) { stop.located = false; return Promise.resolve(stop); }
+      var q = geoQuery(stop, n);
+      if (!q || tried.indexOf(q) !== -1) return attempt(n + 1);
+      tried.push(q);
+      var wait = tried.length > 1 ? 1100 : 0;
+      return new Promise(function (r) { setTimeout(r, wait); })
+        .then(function () { return geocodeOnce(q); })
+        .then(function (j) {
+          if (j === null) { stop.located = undefined; return stop; }   // no network
+          if (j && j[0]) {
+            stop.lat = parseFloat(j[0].lat);
+            stop.lng = parseFloat(j[0].lon);
+            stop.located = true;
+            stop.approx = (n > 1);   // matched the street, not the house
+            return stop;
+          }
+          return attempt(n + 1);
+        });
+    }
+    return attempt(0);
   }
 
   function orderByDistance() {
