@@ -62,7 +62,12 @@ function check(label, cond, extra) {
   const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
   const errors = [];
   page.on("pageerror", (e) => errors.push(String(e)));
-  page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
+  page.on("console", (m) => {
+  if (m.type() !== "error") return;
+  // this sandbox has no route to the geocoder; that path is tested on its own below
+  if (/nominatim|TUNNEL|ERR_NAME|ERR_INTERNET/i.test(m.text())) return;
+  errors.push(m.text());
+});
 
   await page.goto("http://localhost:8099/", { waitUntil: "load" });
 
@@ -200,6 +205,22 @@ function check(label, cond, extra) {
   await page.waitForTimeout(200);
   const kept = await page.evaluate(() => !!JSON.parse(localStorage.getItem("maslul.v1") || "{}").run);
   check("a run from today survives", kept);
+
+
+  // --- geocoding unreachable: the list order must survive, nothing may break ---
+  await page.evaluate(() => localStorage.removeItem("maslul.v1"));
+  await page.reload({ waitUntil: "load" });
+  await page.fill("#raw", LIST);
+  await page.click("#parseBtn");
+  await page.waitForSelector("#viewReview:not([hidden])");
+  await page.waitForTimeout(3000);
+  const namesNoNet = await page.$$eval("#reviewList .name", els => els.map(e => e.textContent));
+  check("stops survive a failed geocode", namesNoNet.length === 6, namesNoNet.join(" | "));
+  check("pickup still first", namesNoNet[0] === "תחנת חלוקה", namesNoNet[0]);
+  const autoMsg = await page.textContent("#autoStatus");
+  check("the app says it fell back to the list order", /נשאר כמו ברשימה/.test(autoMsg), autoMsg.slice(0, 70));
+  const canStart = await page.isEnabled("#startBtn");
+  check("the route can still be started", canStart);
 
   check("no page errors", errors.length === 0, errors.slice(0, 3).join(" ;; "));
 

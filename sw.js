@@ -1,5 +1,5 @@
 // Offline shell for the route app. Bump CACHE when you change any file below.
-const CACHE = "maslul-v3";
+const CACHE = "maslul-v4";
 const SHELL = [
   "./",
   "./index.html",

@@ -176,9 +176,10 @@
   <!-- ============ REVIEW ============ -->
   <section id="viewReview" hidden>
     <div id="reviewAlert"></div>
-    <p class="hint">עבור על העצירות ותקן מה שצריך. סדר אותן לפי הנסיעה שלך — הראשונה היא נקודת האיסוף.</p>
+    <p class="hint">העצירות מסודרות אוטומטית לפי קרבה, מנקודת האיסוף והלאה. החצים נועדו לתקן — אם אתה מכיר קיצור דרך, אם מישהו ביקש שעה מסוימת, או אם כתובת לא אותרה.</p>
     <div id="reviewList"></div>
-    <button class="btn" id="autoBtn">נסה לסדר אוטומטית לפי מיקום</button>
+    <button class="btn" id="autoBtn">סדר מחדש לפי מיקום</button>
+    <button class="btn" id="origOrderBtn">חזור לסדר של הרשימה</button>
     <p class="hint">הסידור האוטומטי שולח את הכתובות (בלי שמות ובלי טלפונים) לשירות המפות הפתוח OpenStreetMap, כדי לאתר אותן. אם אתה מעדיף שהכתובות לא יצאו מהמכשיר — סדר ידנית בחיצים.</p>
     <div id="autoStatus" class="hint" hidden></div>
     <button class="btn primary" id="startBtn" style="margin-top:8px">התחל מסלול</button>
@@ -397,7 +398,9 @@
       el.innerHTML =
         '<div class="head"><div class="num">' + (i + 1) + '</div><div class="who">' +
           '<p class="name">' + esc(s.name || "ללא שם") + '</p>' +
-          '<div class="role">' + (s.kind === "pickup" ? "נקודת איסוף" : "מסירה") + '</div>' +
+          '<div class="role">' + (s.kind === "pickup" ? "נקודת איסוף" : "מסירה") +
+            (s.located === false ? ' · <span style="color:#9E3418;font-weight:700">לא אותרה במפה</span>' : '') +
+          '</div>' +
         '</div></div>' +
         '<div class="edit">' +
           '<input type="text" data-f="name" data-i="' + i + '" value="' + esc(s.name) + '" placeholder="שם">' +
@@ -514,16 +517,51 @@
   }
 
   // ---------- auto ordering ----------
-  function geocode(stop) {
+  // Address lines carry things a geocoder chokes on: an apartment after a slash,
+  // a floor, an entrance, and words like "רחבת" before the street name.
+  function geoQuery(stop, attempt) {
+    var a = (stop.addr || "").split(" · ")[0].split(",")[0];
+    a = a.replace(/\s*\/\s*\d+\S*/, "");
+    a = a.replace(/\s+(קומה|דירה|כניסה|קרקע|דלת)\b.*$/, "");
+    if (attempt > 0) a = a.replace(/^\s*(רחבת|שדרות|שד['׳]?|רחוב|רח['׳]?)\s+/, "");
+    a = a.trim();
+    var city = state.settings.city.trim();
+    if (city && a.indexOf(city) === -1) a += ", " + city;
+    return a;
+  }
+
+  // null = the service could not be reached at all (no signal, blocked network);
+  // [] = it answered but knows nothing about that address.
+  var netDown = false;
+
+  function geocodeOnce(q) {
     var url = "https://nominatim.openstreetmap.org/search?format=json&limit=1&q=" +
-      encodeURIComponent(fullAddr(stop));
+      encodeURIComponent(q);
     return fetch(url, { headers: { "Accept": "application/json" } })
       .then(function (r) { return r.ok ? r.json() : []; })
-      .then(function (j) {
-        if (j && j[0]) { stop.lat = parseFloat(j[0].lat); stop.lng = parseFloat(j[0].lon); }
-        return stop;
-      })
-      .catch(function () { return stop; });
+      .catch(function () { netDown = true; return null; });
+  }
+
+  function geocode(stop) {
+    return geocodeOnce(geoQuery(stop, 0)).then(function (j) {
+      if (j === null) return null;
+      if (j && j[0]) return j;
+      var second = geoQuery(stop, 1);
+      if (second === geoQuery(stop, 0)) return [];
+      return new Promise(function (res) { setTimeout(res, 1100); }).then(function () {
+        return geocodeOnce(second);
+      });
+    }).then(function (j) {
+      if (j === null) { stop.located = undefined; return stop; }
+      if (j && j[0]) {
+        stop.lat = parseFloat(j[0].lat);
+        stop.lng = parseFloat(j[0].lon);
+        stop.located = true;
+      } else {
+        stop.located = false;
+      }
+      return stop;
+    });
   }
 
   function orderByDistance() {
@@ -558,30 +596,44 @@
     btn.disabled = true;
     btn.textContent = "מאתר כתובות…";
     status.hidden = false;
-    status.textContent = "מחפש את הכתובות במפה. לוקח כשנייה לכל עצירה.";
+    status.textContent = "מאתר את הכתובות במפה ומסדר לפי קרבה. כשנייה לכל עצירה.";
 
+    netDown = false;
     var stops = state.run.stops.slice();
     var i = 0;
     function next() {
-      if (i >= stops.length) return Promise.resolve();
+      if (i >= stops.length || netDown) return Promise.resolve();
       var s = stops[i++];
       return geocode(s).then(function () {
-        status.textContent = "אותרו " + stops.filter(function (x) { return x.lat; }).length +
+        if (netDown) return;
+        status.textContent = "אותרו " + stops.filter(function (x) { return x.located; }).length +
           " מתוך " + stops.length + " כתובות…";
         return new Promise(function (res) { setTimeout(res, 1100); }).then(next);
       });
     }
 
-    next().then(function () {
-      var found = stops.filter(function (x) { return x.lat; }).length;
+    return next().then(function () {
+      var found = stops.filter(function (x) { return x.located; }).length;
+      var missed = stops.filter(function (x) { return x.located === false; });
       btn.disabled = false;
-      btn.textContent = "נסה לסדר אוטומטית לפי מיקום";
-      if (found < 2 || !orderByDistance()) {
-        status.textContent = "לא הצלחתי לאתר מספיק כתובות — סדר אותן ידנית בחיצים. זה לא פוגע בשאר האפליקציה.";
+      btn.textContent = "סדר מחדש לפי מיקום";
+      if (netDown) {
+        status.textContent = "אין חיבור לשירות המפות, אז הסדר נשאר כמו ברשימה. " +
+          "סדר בחיצים, או לחץ \"סדר מחדש לפי מיקום\" כשתהיה קליטה.";
         return;
       }
-      status.textContent = "סודר לפי קרבה (" + found + " מתוך " + stops.length +
-        " כתובות אותרו). עבור על הסדר ותקן אם צריך — אתה מכיר את העיר טוב יותר.";
+      if (found < 2 || !orderByDistance()) {
+        status.textContent = "לא הצלחתי לאתר מספיק כתובות, אז הסדר נשאר כמו ברשימה. סדר אותן בחיצים.";
+        save();
+        renderReview();
+        return;
+      }
+      var msg = "סודר לפי קרבה. עבור על הסדר ותקן בחיצים אם צריך — אתה מכיר את העיר.";
+      if (missed.length) {
+        msg += " " + missed.length + " כתובות לא אותרו והועברו לסוף: " +
+          missed.map(function (x) { return x.name; }).join(", ") + ". מקם אותן ידנית.";
+      }
+      status.textContent = msg;
       save();
       renderReview();
     });
@@ -600,16 +652,17 @@
       deadline: parsed.deadline,
       problems: parsed.problems,
       pickupTime: "",
-      stops: parsed.stops.map(function (s) {
+      stops: parsed.stops.map(function (s, idx) {
         return {
           kind: s.kind, name: s.name, addr: s.addr, phones: s.phones,
-          qty: s.qty, notes: s.notes, warns: s.warns, done: false
+          qty: s.qty, notes: s.notes, warns: s.warns, done: false, listIndex: idx
         };
       })
     };
     save();
     renderReview();
     show("Review");
+    runAutoOrder();   // geographic order is the point of the tool, not an extra
   });
 
   function alertReview(problems) {
@@ -650,6 +703,16 @@
   });
 
   document.getElementById("autoBtn").addEventListener("click", runAutoOrder);
+
+  document.getElementById("origOrderBtn").addEventListener("click", function () {
+    state.run.stops.sort(function (a, b) { return a.listIndex - b.listIndex; });
+    state.run.stops.forEach(function (s, k) { s.kind = k === 0 ? "pickup" : "drop"; });
+    save();
+    renderReview();
+    var st = document.getElementById("autoStatus");
+    st.hidden = false;
+    st.textContent = "הוחזר לסדר שבו הרשימה נכתבה.";
+  });
 
   document.getElementById("startBtn").addEventListener("click", function () {
     state.run.stops.forEach(function (s, k) { s.kind = k === 0 ? "pickup" : "drop"; });
