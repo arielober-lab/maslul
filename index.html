@@ -147,6 +147,24 @@
   }
   .move button.danger{color:var(--flag);border-color:var(--flag)}
 
+  .tabs{display:flex;gap:8px;margin-bottom:14px}
+  .tabs button{
+    flex:1;font-family:inherit;font-size:17px;font-weight:700;cursor:pointer;
+    background:transparent;border:1.5px solid var(--line);color:var(--muted);
+    border-radius:3px;padding:12px;
+  }
+  .tabs button.on{border-color:var(--ink);color:var(--ink)}
+
+  .mapwrap{background:var(--card);border:1px solid var(--line);border-radius:4px;padding:14px}
+  .mapwrap svg{display:block;width:100%;height:auto}
+  .maplegend{margin-top:12px;font-size:15px;color:var(--muted);line-height:1.6}
+  .maplegend b{color:var(--ink)}
+  .mapmiss{
+    margin-top:12px;font-size:15px;color:var(--flag);border:1.5px solid var(--flag);
+    border-radius:3px;padding:10px 12px;
+  }
+  .mapempty{padding:34px 16px;text-align:center;color:var(--muted);font-size:16px;line-height:1.6}
+
   .finish{border:1px dashed var(--line);border-radius:4px;padding:20px 16px;text-align:center;color:var(--muted);font-size:16px;margin-bottom:14px}
   .finish.on{border-style:solid;border-color:var(--go);color:var(--ink)}
   .finish .big{font-family:"Frank Ruhl Libre",Georgia,serif;font-size:22px;font-weight:700;color:var(--ink);display:block;margin-bottom:4px}
@@ -188,6 +206,10 @@
 
   <!-- ============ RUN ============ -->
   <section id="viewRun" hidden>
+    <div class="tabs">
+      <button id="tabList" class="on">רשימה</button>
+      <button id="tabMap">מפה</button>
+    </div>
     <div class="panel">
       <label class="field" style="margin:0">
         <span id="ptimeLabel">שעת האיסוף</span>
@@ -199,6 +221,16 @@
     <div class="finish" id="finish"></div>
     <button class="ghost" id="editRun" style="margin:0 auto">ערוך את העצירות</button>
     <button class="ghost" id="newRun" style="margin:0 auto">מסלול חדש</button>
+  </section>
+
+  <!-- ============ MAP ============ -->
+  <section id="viewMap" hidden>
+    <div class="tabs">
+      <button id="tabList2">רשימה</button>
+      <button id="tabMap2" class="on">מפה</button>
+    </div>
+    <div class="mapwrap" id="mapwrap"></div>
+    <p class="hint">הציור סכמטי: הוא מראה את הסדר ואת הכיוונים, לא את הכבישים. לנסיעה עצמה השתמש בכפתור Waze שבעצירה.</p>
   </section>
 
   <!-- ============ SETTINGS ============ -->
@@ -372,7 +404,7 @@
   }
 
   // ---------- views ----------
-  var views = ["Import", "Review", "Run", "Settings"];
+  var views = ["Import", "Review", "Run", "Map", "Settings"];
   function show(name) {
     views.forEach(function (v) {
       document.getElementById("view" + v).hidden = (v !== name);
@@ -382,7 +414,7 @@
     var sub = document.getElementById("subtitle");
     if (name === "Settings") { t.textContent = "הגדרות"; sub.textContent = ""; }
     else if (name === "Review") { t.textContent = "בדיקת המסלול"; sub.textContent = state.run ? state.run.stops.length + " עצירות" : ""; }
-    else if (name === "Run") { t.textContent = "מסלול"; sub.textContent = runSummary(); }
+    else if (name === "Run" || name === "Map") { t.textContent = "מסלול"; sub.textContent = runSummary(); }
     else { t.textContent = "מסלול"; sub.textContent = "הדבק רשימה וקבל מסלול נסיעה"; }
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -513,6 +545,108 @@
       fin.className = "finish";
       fin.innerHTML = '<span class="big">' + left + ' עצירות נותרו</span>סמן כל עצירה כשהיא נגמרת';
     }
+  }
+
+  // The stops already carry coordinates from the automatic ordering, so the map
+  // costs nothing extra: no tiles, no library, no network. It works with no
+  // signal, which is when a driver is most likely to want it.
+  function renderMap() {
+    var host = document.getElementById("mapwrap");
+    var all = state.run.stops;
+    var pts = [];
+    all.forEach(function (st, i) {
+      if (typeof st.lat === "number" && typeof st.lng === "number") pts.push({ s: st, n: i + 1 });
+    });
+    var missing = all.filter(function (st) {
+      return typeof st.lat !== "number" || typeof st.lng !== "number";
+    });
+
+    if (pts.length < 2) {
+      host.innerHTML = '<div class="mapempty">אין מספיק כתובות מאותרות כדי לצייר מפה.<br>' +
+        'חזור לרשימה ולחץ "סדר מחדש לפי מיקום" כשיש קליטה.</div>';
+      return;
+    }
+
+    // equirectangular: accurate enough across one city
+    var latAvg = pts.reduce(function (a, q) { return a + q.s.lat; }, 0) / pts.length;
+    var k = Math.cos(latAvg * Math.PI / 180);
+    var xs = pts.map(function (q) { return q.s.lng * k; });
+    var ys = pts.map(function (q) { return -q.s.lat; });
+    var minX = Math.min.apply(null, xs), maxX = Math.max.apply(null, xs);
+    var minY = Math.min.apply(null, ys), maxY = Math.max.apply(null, ys);
+    var spanX = Math.max(maxX - minX, 1e-9), spanY = Math.max(maxY - minY, 1e-9);
+
+    var W = 600, PAD = 46, R = 19, GAP = 2 * R + 8;
+    var H = Math.round(Math.min(780, Math.max(260, (spanY / spanX) * (W - 2 * PAD) + 2 * PAD)));
+    var sc = Math.min((W - 2 * PAD) / spanX, (H - 2 * PAD) / spanY);
+
+    pts.forEach(function (q, i) {
+      q.x = (xs[i] - minX) * sc;
+      q.y = (ys[i] - minY) * sc;
+      // two stops in one building land on the same point: give the relaxation
+      // below a direction to work with
+      q.x += ((i % 3) - 1) * 0.02;
+      q.y += ((i % 2) - 0.5) * 0.02;
+    });
+
+    // Push overlapping markers apart. The picture is schematic anyway, and two
+    // numbers stacked on each other are worth less than a few pixels of truth.
+    for (var pass = 0; pass < 120; pass++) {
+      var moved = false;
+      for (var a = 0; a < pts.length; a++) {
+        for (var b = a + 1; b < pts.length; b++) {
+          var dx = pts[b].x - pts[a].x, dy = pts[b].y - pts[a].y;
+          var d = Math.sqrt(dx * dx + dy * dy);
+          if (d >= GAP) continue;
+          if (d < 0.001) { dx = 1; dy = 0.4; d = 1.0770; }
+          var push = (GAP - d) / 2, ux = dx / d, uy = dy / d;
+          pts[a].x -= ux * push; pts[a].y -= uy * push;
+          pts[b].x += ux * push; pts[b].y += uy * push;
+          moved = true;
+        }
+      }
+      if (!moved) break;
+    }
+
+    // re-fit inside the frame after the push
+    var xv = pts.map(function (q) { return q.x; }), yv = pts.map(function (q) { return q.y; });
+    var bx0 = Math.min.apply(null, xv), bx1 = Math.max.apply(null, xv);
+    var by0 = Math.min.apply(null, yv), by1 = Math.max.apply(null, yv);
+    H = Math.round(Math.min(820, Math.max(260, by1 - by0 + 2 * PAD)));
+    var fit = Math.min(1, (W - 2 * PAD) / Math.max(bx1 - bx0, 1), (H - 2 * PAD) / Math.max(by1 - by0, 1));
+    var cx = (bx0 + bx1) / 2, cy = (by0 + by1) / 2;
+    pts.forEach(function (q) {
+      q.x = W / 2 + (q.x - cx) * fit;
+      q.y = H / 2 + (q.y - cy) * fit;
+    });
+
+    var line = pts.map(function (q, i) {
+      return (i ? "L" : "M") + q.x.toFixed(1) + " " + q.y.toFixed(1);
+    }).join("");
+
+    var dots = pts.map(function (q) {
+      var fill = q.s.done ? "var(--done)" : "var(--go)";
+      var ring = q.s.kind === "pickup"
+        ? '<circle cx="' + q.x.toFixed(1) + '" cy="' + q.y.toFixed(1) + '" r="' + (R + 6) +
+          '" fill="none" stroke="' + fill + '" stroke-width="3"/>' : '';
+      return '<g data-stop="' + (q.n - 1) + '" style="cursor:pointer">' + ring +
+        '<circle cx="' + q.x.toFixed(1) + '" cy="' + q.y.toFixed(1) + '" r="' + R +
+          '" fill="' + fill + '" stroke="var(--card)" stroke-width="3"/>' +
+        '<text x="' + q.x.toFixed(1) + '" y="' + (q.y + 6).toFixed(1) + '" text-anchor="middle" ' +
+          'font-size="18" font-weight="700" fill="var(--card)">' + q.n + '</text></g>';
+    }).join("");
+
+    host.innerHTML =
+      '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="סדר העצירות במסלול">' +
+        '<path d="' + line + '" fill="none" stroke="var(--go)" stroke-width="5" ' +
+          'stroke-linecap="round" stroke-linejoin="round" opacity="0.5"/>' + dots +
+      '</svg>' +
+      '<div class="maplegend"><b>1</b> היא נקודת האיסוף, ואחריה המסירות לפי הסדר. ' +
+        'לחיצה על עיגול קופצת לעצירה ברשימה.</div>' +
+      (missing.length
+        ? '<div class="mapmiss">לא על המפה: ' +
+            missing.map(function (m) { return esc(m.name); }).join(", ") + '</div>'
+        : "");
   }
 
   function dialBlock(s) {
@@ -756,6 +890,25 @@
       state.run.stops[+u.getAttribute("data-undo")].done = false;
       save(); renderRun();
     }
+  });
+
+  function showMap() { renderMap(); show("Map"); }
+  function showList() { renderRun(); show("Run"); }
+
+  ["tabMap", "tabMap2"].forEach(function (id) {
+    document.getElementById(id).addEventListener("click", showMap);
+  });
+  ["tabList", "tabList2"].forEach(function (id) {
+    document.getElementById(id).addEventListener("click", showList);
+  });
+
+  document.getElementById("mapwrap").addEventListener("click", function (e) {
+    var g = e.target.closest("[data-stop]");
+    if (!g) return;
+    var idx = +g.getAttribute("data-stop");
+    showList();
+    var card = document.querySelectorAll("#runList .stop")[idx];
+    if (card) card.scrollIntoView({ behavior: "smooth", block: "center" });
   });
 
   document.getElementById("ptime").addEventListener("change", function () {
