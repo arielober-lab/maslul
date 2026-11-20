@@ -166,6 +166,7 @@
 
   <!-- ============ IMPORT ============ -->
   <section id="viewImport" hidden>
+    <div id="notice" class="alert" hidden></div>
     <p class="hint">הדבק את רשימת החלוקה כמו שקיבלת אותה בוואטסאפ. אין צורך לסדר כלום — האפליקציה מפרקת שמות, כתובות, טלפונים והערות לבד.<br><br>הרשימה נשמרת על המכשיר הזה בלבד. כשסיימת מסלול, כדאי למחוק אותה בהגדרות.</p>
     <textarea id="raw" placeholder="אוסף מ:&#10;שם&#10;כתובת&#10;טלפון&#10;&#10;מעביר ל:&#10;שם&#10;כתובת&#10;טלפון"></textarea>
     <button class="btn primary" id="parseBtn" style="margin-top:12px">בנה מסלול</button>
@@ -239,8 +240,32 @@
       state.raw = s.raw || "";
     } catch (e) { /* first visit, or storage blocked */ }
   }
+  // A run is kept for three days after it was last touched, then cleared on the
+  // next launch. The app can't run in the background, so nothing is promised
+  // about deletion while it is closed — the check happens when it opens.
+  var MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
+
   function save() {
-    try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {}
+    try {
+      if (state.run) state.run.updatedAt = Date.now();
+      localStorage.setItem(KEY, JSON.stringify(state));
+    } catch (e) {}
+  }
+
+  function clearRun() {
+    state.run = null;
+    state.raw = "";
+    save();
+    document.getElementById("raw").value = "";
+    document.getElementById("ptime").value = "";
+    document.getElementById("resumeBtn").hidden = true;
+  }
+
+  function notice(text) {
+    var el = document.getElementById("notice");
+    if (!text) { el.hidden = true; return; }
+    el.textContent = text;
+    el.hidden = false;
   }
 
   // ---------- helpers ----------
@@ -469,7 +494,9 @@
     var left = state.run.stops.filter(function (s) { return !s.done; }).length;
     if (!left) {
       fin.className = "finish on";
-      fin.innerHTML = '<span class="big">המסלול הושלם</span>הכל חולק.';
+      fin.innerHTML = '<span class="big">המסלול הושלם</span>' +
+        'הכל חולק. אפשר למחוק את פרטי המשפחות מהמכשיר עכשיו.' +
+        '<button class="btn primary" id="clearRunBtn" style="margin-top:14px">מחק את הרשימה</button>';
     } else {
       fin.className = "finish";
       fin.innerHTML = '<span class="big">' + left + ' עצירות נותרו</span>סמן כל עצירה כשהיא נגמרת';
@@ -661,10 +688,15 @@
   });
 
   document.getElementById("newRun").addEventListener("click", function () {
-    state.run = null; state.raw = "";
-    save();
-    document.getElementById("raw").value = "";
-    document.getElementById("resumeBtn").hidden = true;
+    clearRun();
+    notice("");
+    show("Import");
+  });
+
+  document.getElementById("finish").addEventListener("click", function (e) {
+    if (!e.target.closest("#clearRunBtn")) return;
+    clearRun();
+    notice("הרשימה נמחקה מהמכשיר.");
     show("Import");
   });
 
@@ -729,7 +761,22 @@
 
   // ---------- boot ----------
   load();
+
+  var expired = false;
+  if (state.run) {
+    if (!state.run.updatedAt) {
+      state.run.updatedAt = Date.now();   // a run saved before this check existed
+      save();
+    } else if (Date.now() - state.run.updatedAt > MAX_AGE_MS) {
+      state.run = null;
+      state.raw = "";
+      try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {}
+      expired = true;
+    }
+  }
+
   document.getElementById("raw").value = state.raw;
+  if (expired) notice("הרשימה הקודמת נמחקה אוטומטית — עברו יותר משלושה ימים מאז שנגעת בה.");
   if (state.run) {
     document.getElementById("ptime").value = state.run.pickupTime || "";
     document.getElementById("resumeBtn").hidden = false;

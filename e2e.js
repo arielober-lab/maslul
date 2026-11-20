@@ -150,6 +150,57 @@ function check(label, cond, extra) {
   const ptime = await page.inputValue("#ptime");
   check("run survives reload", runVisible && ptime === "11:30", "visible=" + runVisible + " time=" + ptime);
 
+
+  // --- finish panel offers deletion, and it works ---
+  for (const i of [0,1,2,3,4,5]) {
+    const btn = await page.$(`#runList [data-done='${i}']`);
+    if (btn) { await btn.click(); await page.waitForTimeout(80); }
+  }
+  await page.waitForTimeout(150);
+  const hasClear = await page.isVisible("#clearRunBtn");
+  check("finish panel offers to delete the list", hasClear);
+  await page.click("#clearRunBtn");
+  await page.waitForTimeout(150);
+  const afterClear = await page.evaluate(() => {
+    const o = JSON.parse(localStorage.getItem("maslul.v1") || "{}");
+    return { run: o.run, raw: o.raw, driver: o.settings && o.settings.driver };
+  });
+  check("deleting clears the run and the pasted text", !afterClear.run && !afterClear.raw, JSON.stringify(afterClear));
+  check("deleting keeps the driver's own settings", afterClear.driver === "אריאל", afterClear.driver);
+
+  // --- three-day expiry on open ---
+  await page.fill("#raw", LIST);
+  await page.click("#parseBtn");
+  await page.waitForSelector("#viewReview:not([hidden])");
+  await page.click("#startBtn");
+  await page.waitForTimeout(150);
+  await page.evaluate(() => {
+    const o = JSON.parse(localStorage.getItem("maslul.v1"));
+    o.run.updatedAt = Date.now() - (3 * 24 * 60 * 60 * 1000 + 60000); // 3 days + 1 min
+    localStorage.setItem("maslul.v1", JSON.stringify(o));
+  });
+  await page.reload({ waitUntil: "load" });
+  await page.waitForTimeout(200);
+  const gone = await page.evaluate(() => {
+    const o = JSON.parse(localStorage.getItem("maslul.v1") || "{}");
+    return { run: o.run, raw: o.raw, driver: o.settings && o.settings.driver,
+             onImport: !document.getElementById("viewImport").hidden,
+             notice: document.getElementById("notice").hidden ? "" : document.getElementById("notice").textContent };
+  });
+  check("a run older than three days is cleared on open", !gone.run && !gone.raw, JSON.stringify(gone).slice(0,120));
+  check("expiry keeps settings and explains itself", gone.driver === "אריאל" && gone.notice.includes("שלושה ימים"), gone.notice);
+
+  // --- a fresh run is NOT cleared ---
+  await page.fill("#raw", LIST);
+  await page.click("#parseBtn");
+  await page.waitForSelector("#viewReview:not([hidden])");
+  await page.click("#startBtn");
+  await page.waitForTimeout(150);
+  await page.reload({ waitUntil: "load" });
+  await page.waitForTimeout(200);
+  const kept = await page.evaluate(() => !!JSON.parse(localStorage.getItem("maslul.v1") || "{}").run);
+  check("a run from today survives", kept);
+
   check("no page errors", errors.length === 0, errors.slice(0, 3).join(" ;; "));
 
   await page.screenshot({ path: "shot-run.png", fullPage: false });
