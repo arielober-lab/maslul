@@ -6,6 +6,7 @@
 <title>מסלול</title>
 <meta name="description" content="הדבקת רשימת חלוקה והפיכתה למסלול נסיעה עם ניווט, חיוג והודעות">
 <meta name="theme-color" content="#E7E5DE">
+<meta name="robots" content="noindex, nofollow, noarchive">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
@@ -280,7 +281,7 @@
 
   <footer>
     נוצר באמצעות Claude על ידי אריאל אוברשטיין<br>
-    תקלה, בקשה או רעיון לשיפור — <a id="builder" href="#">054-724-1004</a>
+    תקלה, בקשה או רעיון לשיפור — <a id="builder" href="#">054-723-1004</a>
     <div class="ver">גרסה <span id="appver"></span></div>
   </footer>
 
@@ -296,7 +297,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "9";   // bump together with CACHE in sw.js
+  var APP_VERSION = "10";   // bump together with CACHE in sw.js
   var KEY = "maslul.v1";
   var DEFAULTS = { driver: "", org: "", item: "הסל", city: "באר שבע" };
 
@@ -1056,7 +1057,7 @@
   }
 
   // ---------- who built this ----------
-  var BUILDER_PHONE = "0547241004";          // remove the footer to take this off the page
+  var BUILDER_PHONE = "0547231004";          // remove the footer to take this off the page
   document.getElementById("builder").href =
     "https://wa.me/972" + BUILDER_PHONE.replace(/\D/g, "").replace(/^0/, "");
   document.getElementById("builder").target = "_blank";
