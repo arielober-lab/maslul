@@ -205,8 +205,8 @@
   <section id="viewSettings" hidden>
     <div class="panel">
       <label class="field"><span>השם שלך, כפי שיופיע בהודעות</span><input type="text" id="setDriver" placeholder="אריאל"></label>
-      <label class="field"><span>הארגון</span><input type="text" id="setOrg" placeholder="עמותת להשביע את הלב"></label>
-      <label class="field"><span>מה אתה מוסר</span><input type="text" id="setItem" placeholder="הסל לשבת"></label>
+      <label class="field"><span>הארגון, כפי שתציג את עצמך</span><input type="text" id="setOrg" placeholder="עמותת להשביע את הלב"></label>
+      <label class="field"><span>מה אתה מוסר (ייכנס לתוך ההודעה)</span><input type="text" id="setItem" placeholder="הסל לשבת"></label>
       <label class="field" style="margin-bottom:0"><span>עיר (נוספת אוטומטית לניווט)</span><input type="text" id="setCity" placeholder="באר שבע"></label>
     </div>
     <p class="hint">ההודעות שיישלחו:<br><span id="previewAsk"></span><br><br><span id="previewEta"></span></p>
@@ -310,27 +310,35 @@
   }
   function firstName(n) { return String(n || "").split(" ")[0]; }
 
-  function who() {
-    var s = state.settings;
-    var line = "";
-    if (s.driver.trim()) line += "אני " + s.driver.trim();
-    if (s.org.trim()) line += (line ? " מ" : "אני מ") + s.org.trim();
-    return line ? line + "." : "";
+  function orgName() {
+    return state.settings.org.trim() || "העמותה לחלוקת סלי מזון";
   }
+
+  // "אני אריאל מעמותת…" — a stranger answers differently when you give a name.
+  function me() {
+    var d = state.settings.driver.trim();
+    return (d ? "אני " + d + " מ" : "אני מ") + orgName();
+  }
+
   function askMessage(stop) {
-    var intro = "בוקר טוב" + (who() ? "\n" + who() : "");
-    if (stop.kind === "pickup") return intro + "\nמתי נוח לכם שאגיע לאסוף?";
-    return intro + "\nבשעה וחצי הקרובות אגיע למסור לכם את " + (state.settings.item || "המשלוח") + ".";
+    if (stop.kind === "pickup") {
+      return "היי, " + me() + " — אנחנו מחלקים סלי מזון למשפחות נזקקות.\n" +
+             "מתי נוח לכם שאבוא לאסוף את הסלים?";
+    }
+    // To the family itself the word "נזקקות" is left out on purpose.
+    return "שלום, " + me() + " — אנחנו מחלקים סלי מזון.\n" +
+           "אגיע אליכם בקרוב עם " + (state.settings.item || "הסל") +
+           ". יש מישהו בבית שיוכל לקבל אותו?";
   }
+
   function etaMessage(stop) {
     if (stop.kind === "pickup" || !state.run.pickupTime) return null;
     var r = etaRange(stop);
     if (!r) return null;
-    var open = "שלום " + firstName(stop.name) + ",";
-    if (who()) open += " כאן " + who().replace(/^אני\s*/, "").replace(/\.$/, "") + ".";
-    return open + " אני מגיע אליך עם " + (state.settings.item || "המשלוח") +
-      " בין " + r[0] + " ל-" + r[1] + ".";
+    return "שלום " + firstName(stop.name) + ", " + me() + ". אני מגיע אליכם עם " +
+           (state.settings.item || "הסל") + " בין " + r[0] + " ל-" + r[1] + ".";
   }
+
   function etaRange(stop) {
     if (!state.run.pickupTime) return null;
     var i = state.run.stops.indexOf(stop);
@@ -776,12 +784,11 @@
     previewMessages();
   }
   function previewMessages() {
-    var fake = { kind: "drop", name: "ישראל", phones: ["0500000000"], addr: "" };
-    document.getElementById("previewAsk").textContent = askMessage(fake).replace(/\n/g, " / ");
-    var open = "שלום ישראל,";
-    if (who()) open += " כאן " + who().replace(/^אני\s*/, "").replace(/\.$/, "") + ".";
+    document.getElementById("previewAsk").textContent =
+      askMessage({ kind: "drop", name: "ישראל", phones: [] }).replace(/\n/g, " ");
     document.getElementById("previewEta").textContent =
-      open + " אני מגיע אליך עם " + (state.settings.item || "המשלוח") + " בין 12:00 ל-12:20.";
+      "שלום ישראל, " + me() + ". אני מגיע אליכם עם " +
+      (state.settings.item || "הסל") + " בין 12:00 ל-12:20.";
   }
   document.getElementById("settingsBtn").addEventListener("click", function () {
     fillSettings(); show("Settings");
