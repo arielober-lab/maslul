@@ -226,7 +226,7 @@
   <section id="viewRun" hidden>
     <div class="tabs">
       <button id="tabList" class="on">רשימה</button>
-      <button id="tabMap">מפה</button>
+      <button id="tabMap">תרשים</button>
     </div>
     <div class="panel">
       <label class="field" style="margin:0">
@@ -245,10 +245,10 @@
   <section id="viewMap" hidden>
     <div class="tabs">
       <button id="tabList2">רשימה</button>
-      <button id="tabMap2" class="on">מפה</button>
+      <button id="tabMap2" class="on">תרשים</button>
     </div>
     <div class="mapwrap" id="mapwrap"></div>
-    <p class="hint">הציור סכמטי: הוא מראה את הסדר ואת הכיוונים, לא את הכבישים. לנסיעה עצמה השתמש בכפתור Waze שבעצירה.</p>
+    <p class="hint">התרשים מראה את סדר הנסיעה ואת הכיוונים בין העצירות — לא את הכבישים ולא את המרחקים לפי הדרך. לנסיעה עצמה השתמש בכפתור Waze שבעצירה.</p>
   </section>
 
   <!-- ============ SETTINGS ============ -->
@@ -297,7 +297,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "10";   // bump together with CACHE in sw.js
+  var APP_VERSION = "11";   // bump together with CACHE in sw.js
   var KEY = "maslul.v1";
   var DEFAULTS = { driver: "", org: "", item: "הסל", city: "באר שבע" };
 
@@ -477,7 +477,7 @@
         '<div class="head"><div class="num">' + (i + 1) + '</div><div class="who">' +
           '<p class="name">' + esc(s.name || "ללא שם") + '</p>' +
           '<div class="role">' + (s.kind === "pickup" ? "נקודת איסוף" : "מסירה") +
-            (s.located === false ? ' · <span style="color:#9E3418;font-weight:700">לא אותרה במפה</span>' : '') +
+            (s.located === false ? ' · <span style="color:#9E3418;font-weight:700">הכתובת לא זוהתה</span>' : '') +
             (s.located && s.approx ? ' · <span style="color:#6E7377">מיקום מקורב</span>' : '') +
           '</div>' +
         '</div></div>' +
@@ -600,7 +600,7 @@
     });
 
     if (pts.length < 2) {
-      host.innerHTML = '<div class="mapempty">אין מספיק כתובות מאותרות כדי לצייר מפה.<br>' +
+      host.innerHTML = '<div class="mapempty">אין מספיק כתובות מאותרות כדי לצייר תרשים.<br>' +
         'חזור לרשימה ולחץ "סדר מחדש לפי מיקום" כשיש קליטה.</div>';
       return;
     }
@@ -682,7 +682,7 @@
       '<div class="maplegend"><b>1</b> היא נקודת האיסוף, ואחריה המסירות לפי הסדר. ' +
         'לחיצה על עיגול קופצת לעצירה ברשימה.</div>' +
       (missing.length
-        ? '<div class="mapmiss">לא על המפה: ' +
+        ? '<div class="mapmiss">לא בתרשים: ' +
             missing.map(function (m) { return esc(m.name); }).join(", ") + '</div>'
         : "");
   }
@@ -785,7 +785,7 @@
     btn.disabled = true;
     btn.textContent = "מאתר כתובות…";
     status.hidden = false;
-    status.textContent = "מאתר את הכתובות במפה ומסדר לפי קרבה. כשנייה לכל עצירה.";
+    status.textContent = "מאתר את הכתובות ומסדר לפי קרבה. כשנייה לכל עצירה.";
 
     netDown = false;
     var stops = state.run.stops.slice();
