@@ -51,6 +51,10 @@ const LIST = `*יש לאסוף עד השעה 12:00*
   await pg.evaluate(() => window.scrollTo(0, 0));
   await pg.waitForTimeout(300);
   await pg.screenshot({ path: "shot-ready.png" });
+  // and the same screen after scrolling into the middle of the list
+  await pg.evaluate(() => window.scrollTo(0, 700));
+  await pg.waitForTimeout(300);
+  await pg.screenshot({ path: "shot-scrolled.png" });
   await b.close(); srv.close();
   console.log("ok");
 })();

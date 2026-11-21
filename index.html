@@ -159,6 +159,16 @@
   .building .big{font-family:"Frank Ruhl Libre",Georgia,serif;font-size:26px;font-weight:700}
   .building .sub{font-size:16px;color:var(--muted);margin-top:10px;line-height:1.5}
 
+  /* The primary action rides with the screen. At the top of the page it would
+     vanish the moment the driver scrolls through the stops — which is exactly
+     what this screen asks them to do. */
+  .actionbar{
+    position:sticky;bottom:0;z-index:20;background:var(--paper);
+    border-top:1px solid var(--line);
+    margin-top:6px;padding:12px 0 calc(12px + env(safe-area-inset-bottom));
+  }
+  .actionbar .count{font-size:14px;color:var(--muted);text-align:center;margin-top:8px}
+
   .ready{
     font-size:16px;color:var(--ink);border-inline-start:3px solid var(--go);
     padding-inline-start:12px;margin-bottom:16px;line-height:1.5;
@@ -239,7 +249,12 @@
       <div id="reviewAlert"></div>
       <div id="autoStatus" class="ready" hidden></div>
       <div id="reviewList"></div>
-      <button class="btn primary" id="startBtn">התחל מסלול</button>
+
+      <div class="actionbar">
+        <button class="btn primary" id="startBtn">התחל מסלול</button>
+        <div class="count" id="reviewCount"></div>
+      </div>
+
       <p class="hint">הסדר נקבע לפי קרבה. אם צריך לשנות אותו — החצים שבכל עצירה מזיזים אותה למעלה או למטה. שימושי כשאתה מכיר קיצור דרך, כשמישהו ביקש שעה מסוימת, או כשכתובת לא זוהתה.</p>
       <button class="btn" id="autoBtn">סדר מחדש לפי מיקום</button>
       <button class="btn" id="origOrderBtn">חזור לסדר של הרשימה</button>
@@ -323,7 +338,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "12";   // bump together with CACHE in sw.js
+  var APP_VERSION = "13";   // bump together with CACHE in sw.js
   var KEY = "maslul.v1";
   var DEFAULTS = { driver: "", org: "", item: "הסל", city: "באר שבע" };
 
@@ -539,6 +554,10 @@
         '</div>';
       host.appendChild(el);
     });
+
+    var drops = state.run.stops.filter(function (x) { return x.kind !== "pickup"; }).length;
+    document.getElementById("reviewCount").textContent =
+      "נקודת איסוף ועוד " + drops + " מסירות";
 
     var alertBox = document.getElementById("reviewAlert");
     var probs = state.run.problems || [];
