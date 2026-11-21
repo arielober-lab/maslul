@@ -84,7 +84,8 @@ function check(label, cond, extra) {
   // --- import ---
   await page.fill("#raw", LIST);
   await page.click("#parseBtn");
-  await page.waitForSelector("#viewReview:not([hidden])");
+  // the review screen now waits behind a building state until the route is ready
+  await page.waitForSelector("#reviewReady:not([hidden])", { timeout: 30000 });
 
   const names = await page.$$eval("#reviewList .name", (els) => els.map((e) => e.textContent));
   check("6 stops parsed", names.length === 6, names.join(" | "));
@@ -176,7 +177,8 @@ function check(label, cond, extra) {
   // --- three-day expiry on open ---
   await page.fill("#raw", LIST);
   await page.click("#parseBtn");
-  await page.waitForSelector("#viewReview:not([hidden])");
+  // the review screen now waits behind a building state until the route is ready
+  await page.waitForSelector("#reviewReady:not([hidden])", { timeout: 30000 });
   await page.click("#startBtn");
   await page.waitForTimeout(150);
   await page.evaluate(() => {
@@ -198,7 +200,8 @@ function check(label, cond, extra) {
   // --- a fresh run is NOT cleared ---
   await page.fill("#raw", LIST);
   await page.click("#parseBtn");
-  await page.waitForSelector("#viewReview:not([hidden])");
+  // the review screen now waits behind a building state until the route is ready
+  await page.waitForSelector("#reviewReady:not([hidden])", { timeout: 30000 });
   await page.click("#startBtn");
   await page.waitForTimeout(150);
   await page.reload({ waitUntil: "load" });
@@ -212,7 +215,8 @@ function check(label, cond, extra) {
   await page.reload({ waitUntil: "load" });
   await page.fill("#raw", LIST);
   await page.click("#parseBtn");
-  await page.waitForSelector("#viewReview:not([hidden])");
+  // the review screen now waits behind a building state until the route is ready
+  await page.waitForSelector("#reviewReady:not([hidden])", { timeout: 30000 });
   await page.waitForTimeout(3000);
   const namesNoNet = await page.$$eval("#reviewList .name", els => els.map(e => e.textContent));
   check("stops survive a failed geocode", namesNoNet.length === 6, namesNoNet.join(" | "));
@@ -221,6 +225,56 @@ function check(label, cond, extra) {
   check("the app says it fell back to the list order", /נשאר כמו ברשימה/.test(autoMsg), autoMsg.slice(0, 70));
   const canStart = await page.isEnabled("#startBtn");
   check("the route can still be started", canStart);
+
+
+  // --- the waiting screen hides the half-built list ---
+  await page.evaluate(() => localStorage.removeItem("maslul.v1"));
+  await page.reload({ waitUntil: "load" });
+  await page.fill("#raw", LIST);
+  await page.click("#parseBtn");
+  await page.waitForTimeout(120);
+  const mid = await page.evaluate(() => ({
+    building: !document.getElementById("building").hidden,
+    ready: !document.getElementById("reviewReady").hidden,
+    cards: document.querySelectorAll("#reviewList .stop").length,
+    says: document.getElementById("buildStatus").textContent
+  }));
+  check("a building screen shows while the route is being built", mid.building && !mid.ready, JSON.stringify(mid));
+  check("the half-built list is not on screen", mid.cards === 0 || !mid.ready, "cards=" + mid.cards);
+  check("the building screen says what is happening", /מאתר/.test(mid.says), mid.says);
+  await page.waitForSelector("#reviewReady:not([hidden])", { timeout: 30000 });
+  const built = await page.evaluate(() => ({
+    building: !document.getElementById("building").hidden,
+    cards: document.querySelectorAll("#reviewList .stop").length
+  }));
+  check("the finished route replaces the waiting screen", !built.building && built.cards === 6, JSON.stringify(built));
+
+  // --- the diagram follows a manual reorder ---
+  await page.evaluate(() => {
+    // give every stop a coordinate so the diagram can be drawn without a geocoder
+    const o = JSON.parse(localStorage.getItem("maslul.v1"));
+    o.run.stops.forEach((s, i) => { s.lat = 31.25 + i * 0.004; s.lng = 34.78 + i * 0.003; s.located = true; });
+    localStorage.setItem("maslul.v1", JSON.stringify(o));
+  });
+  await page.reload({ waitUntil: "load" });
+  await page.click("#editRun");
+  await page.waitForSelector("#reviewReady:not([hidden])");
+  const beforeNames = await page.$$eval("#reviewList .name", e => e.map(x => x.textContent));
+  await page.click('button[data-up="5"]');          // move the last stop up one
+  await page.waitForTimeout(120);
+  await page.click("#startBtn");
+  await page.waitForTimeout(150);
+  await page.click("#tabMap");
+  await page.waitForTimeout(250);
+  const afterNames = await page.$$eval("#runList .name", e => e.map(x => x.textContent));
+  const dotCount = await page.evaluate(() => document.querySelectorAll("#mapwrap [data-stop]").length);
+  const dot5 = await page.evaluate(() => {
+    const g = document.querySelector('#mapwrap [data-stop="4"]');
+    return g ? g.querySelector("text").textContent : null;
+  });
+  check("the reorder took effect", beforeNames[5] === afterNames[4], beforeNames[5] + " → " + afterNames[4]);
+  check("the diagram draws every stop", dotCount === 6, "dots=" + dotCount);
+  check("the diagram renumbers after a reorder", dot5 === "5", "dot at index 4 reads " + dot5);
 
   check("no page errors", errors.length === 0, errors.slice(0, 3).join(" ;; "));
 

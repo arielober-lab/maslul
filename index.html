@@ -148,6 +148,22 @@
   }
   .move button.danger{color:var(--flag);border-color:var(--flag)}
 
+  .building{text-align:center;padding:70px 20px 80px}
+  .spinner{
+    width:46px;height:46px;margin:0 auto 24px;border-radius:50%;
+    border:4px solid var(--line);border-top-color:var(--go);
+    animation:spin 900ms linear infinite;
+  }
+  @keyframes spin{to{transform:rotate(360deg)}}
+  @media (prefers-reduced-motion:reduce){.spinner{animation-duration:2.6s}}
+  .building .big{font-family:"Frank Ruhl Libre",Georgia,serif;font-size:26px;font-weight:700}
+  .building .sub{font-size:16px;color:var(--muted);margin-top:10px;line-height:1.5}
+
+  .ready{
+    font-size:16px;color:var(--ink);border-inline-start:3px solid var(--go);
+    padding-inline-start:12px;margin-bottom:16px;line-height:1.5;
+  }
+
   .tabs{display:flex;gap:8px;margin-bottom:14px}
   .tabs button{
     flex:1;font-family:inherit;font-size:17px;font-weight:700;cursor:pointer;
@@ -211,15 +227,25 @@
 
   <!-- ============ REVIEW ============ -->
   <section id="viewReview" hidden>
-    <div id="reviewAlert"></div>
-    <p class="hint">העצירות מסודרות אוטומטית לפי קרבה, מנקודת האיסוף והלאה. החצים נועדו לתקן — אם אתה מכיר קיצור דרך, אם מישהו ביקש שעה מסוימת, או אם כתובת לא אותרה.</p>
-    <div id="reviewList"></div>
-    <button class="btn" id="autoBtn">סדר מחדש לפי מיקום</button>
-    <button class="btn" id="origOrderBtn">חזור לסדר של הרשימה</button>
-    <p class="hint">הסידור האוטומטי שולח את הכתובות (בלי שמות ובלי טלפונים) לשירות המפות הפתוח OpenStreetMap, כדי לאתר אותן. אם אתה מעדיף שהכתובות לא יצאו מהמכשיר — סדר ידנית בחיצים.</p>
-    <div id="autoStatus" class="hint" hidden></div>
-    <button class="btn primary" id="startBtn" style="margin-top:8px">התחל מסלול</button>
-    <button class="ghost" id="backToImport" style="margin:10px auto 0">חזור לרשימה</button>
+    <div id="building" hidden>
+      <div class="building">
+        <div class="spinner"></div>
+        <div class="big">בונה מסלול</div>
+        <div class="sub" id="buildStatus">מאתר את הכתובות…</div>
+      </div>
+    </div>
+
+    <div id="reviewReady" hidden>
+      <div id="reviewAlert"></div>
+      <div id="autoStatus" class="ready" hidden></div>
+      <div id="reviewList"></div>
+      <button class="btn primary" id="startBtn">התחל מסלול</button>
+      <p class="hint">הסדר נקבע לפי קרבה. אם צריך לשנות אותו — החצים שבכל עצירה מזיזים אותה למעלה או למטה. שימושי כשאתה מכיר קיצור דרך, כשמישהו ביקש שעה מסוימת, או כשכתובת לא זוהתה.</p>
+      <button class="btn" id="autoBtn">סדר מחדש לפי מיקום</button>
+      <button class="btn" id="origOrderBtn">חזור לסדר של הרשימה</button>
+      <p class="hint">הסידור האוטומטי שולח את הכתובות (בלי שמות ובלי טלפונים) לשירות המפות הפתוח OpenStreetMap, כדי לאתר אותן. אם אתה מעדיף שהכתובות לא יצאו מהמכשיר — סדר ידנית בחיצים.</p>
+      <button class="ghost" id="backToImport" style="margin:10px auto 0">חזור לרשימה</button>
+    </div>
   </section>
 
   <!-- ============ RUN ============ -->
@@ -297,7 +323,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "11";   // bump together with CACHE in sw.js
+  var APP_VERSION = "12";   // bump together with CACHE in sw.js
   var KEY = "maslul.v1";
   var DEFAULTS = { driver: "", org: "", item: "הסל", city: "באר שבע" };
 
@@ -467,6 +493,23 @@
   }
 
   // ---------- review ----------
+  function setBuilding(on, text) {
+    document.getElementById("building").hidden = !on;
+    document.getElementById("reviewReady").hidden = on;
+    if (on && text) document.getElementById("buildStatus").textContent = text;
+  }
+
+  // While the route is being built the message belongs on the waiting screen;
+  // afterwards it belongs above the list, where it is read before the stops.
+  function setProgress(text) {
+    var building = !document.getElementById("building").hidden;
+    if (building) { document.getElementById("buildStatus").textContent = text; return; }
+    var st = document.getElementById("autoStatus");
+    st.hidden = false;
+    st.textContent = text;
+  }
+
+
   function renderReview() {
     var host = document.getElementById("reviewList");
     host.innerHTML = "";
@@ -781,11 +824,9 @@
 
   function runAutoOrder() {
     var btn = document.getElementById("autoBtn");
-    var status = document.getElementById("autoStatus");
     btn.disabled = true;
     btn.textContent = "מאתר כתובות…";
-    status.hidden = false;
-    status.textContent = "מאתר את הכתובות ומסדר לפי קרבה. כשנייה לכל עצירה.";
+    setProgress("מאתר את הכתובות ומסדר לפי קרבה. כשנייה לכל עצירה.");
 
     netDown = false;
     var stops = state.run.stops.slice();
@@ -795,8 +836,8 @@
       var s = stops[i++];
       return geocode(s).then(function () {
         if (netDown) return;
-        status.textContent = "אותרו " + stops.filter(function (x) { return x.located; }).length +
-          " מתוך " + stops.length + " כתובות…";
+        setProgress("אותרו " + stops.filter(function (x) { return x.located; }).length +
+          " מתוך " + stops.length + " כתובות…");
         return new Promise(function (res) { setTimeout(res, 1100); }).then(next);
       });
     }
@@ -807,22 +848,26 @@
       btn.disabled = false;
       btn.textContent = "סדר מחדש לפי מיקום";
       if (netDown) {
-        status.textContent = "אין חיבור לשירות המפות, אז הסדר נשאר כמו ברשימה. " +
-          "סדר בחיצים, או לחץ \"סדר מחדש לפי מיקום\" כשתהיה קליטה.";
+        setBuilding(false);
+        setProgress("אין חיבור לשירות המפות, אז הסדר נשאר כמו ברשימה. " +
+          "סדר בחיצים, או לחץ \"סדר מחדש לפי מיקום\" כשתהיה קליטה.");
+        renderReview();
         return;
       }
       if (found < 2 || !orderByDistance()) {
-        status.textContent = "לא הצלחתי לאתר מספיק כתובות, אז הסדר נשאר כמו ברשימה. סדר אותן בחיצים.";
+        setBuilding(false);
+        setProgress("לא הצלחתי לאתר מספיק כתובות, אז הסדר נשאר כמו ברשימה. סדר אותן בחיצים.");
         save();
         renderReview();
         return;
       }
-      var msg = "סודר לפי קרבה. עבור על הסדר ותקן בחיצים אם צריך — אתה מכיר את העיר.";
+      var msg = "המסלול מוכן — " + (stops.length - 1) + " מסירות, מסודרות לפי קרבה מנקודת האיסוף.";
       if (missed.length) {
         msg += " " + missed.length + " כתובות לא אותרו והועברו לסוף: " +
           missed.map(function (x) { return x.name; }).join(", ") + ". מקם אותן ידנית.";
       }
-      status.textContent = msg;
+      setBuilding(false);
+      setProgress(msg);
       save();
       renderReview();
     });
@@ -849,12 +894,15 @@
       })
     };
     save();
-    renderReview();
+    setBuilding(true, "מאתר את הכתובות…");
     show("Review");
-    runAutoOrder();   // geographic order is the point of the tool, not an extra
+    // Geographic order is the point of the tool, not an extra: the driver sees
+    // the finished route, never the raw list order.
+    runAutoOrder();
   });
 
   function alertReview(problems) {
+    setBuilding(false);
     var host = document.getElementById("reviewAlert");
     host.innerHTML = '<div class="alert">' + (problems || []).map(esc).join("<br>") + '</div>';
     show("Review");
@@ -955,7 +1003,7 @@
   });
 
   document.getElementById("editRun").addEventListener("click", function () {
-    renderReview(); show("Review");
+    setBuilding(false); renderReview(); show("Review");
   });
 
   document.getElementById("newRun").addEventListener("click", function () {
